@@ -1,0 +1,22 @@
+{
+  "name": "safeguard-browser",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "database"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=backend",
+    "db:validate": "npm run db:validate --workspace=database",
+    "db:generate": "npm run db:generate --workspace=database",
+    "db:migrate": "npm run db:migrate --workspace=database",
+    "db:studio": "npm run db:studio --workspace=database"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.19.0"
+  }
+}

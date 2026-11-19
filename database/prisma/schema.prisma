@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+}
+
+enum DeviceStatus {
+  ACTIVE
+  OFFLINE
+  PAUSED
+  REMOVED
+}
+
+enum DomainAction {
+  ALLOW
+  BLOCK
+}
+
+enum PermissionStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+}
+
+enum HistoryDecision {
+  ALLOWED
+  BLOCKED
+  APPROVAL_PENDING
+  APPROVED
+}
+
+enum SecurityEventType {
+  DOMAIN_BLOCKED
+  PERMISSION_REQUESTED
+  PERMISSION_APPROVED
+  PERMISSION_DENIED
+  UNSAFE_REDIRECT_BLOCKED
+  INVALID_URL_BLOCKED
+}
+
+enum SecuritySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model AdminUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @db.VarChar(100)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String
+  isActive     Boolean  @default(true)
+
+  devices           BrowserDevice[]
+  reviewedRequests  PermissionRequest[] @relation("RequestReviewer")
+  refreshTokens     RefreshToken[]
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([isActive])
+}
+
+model BrowserDevice {
+  id               String         @id @default(uuid()) @db.Uuid
+  adminUserId      String         @db.Uuid
+  adminUser        AdminUser      @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  deviceIdentifier String         @unique @db.VarChar(255)
+  deviceName       String         @db.VarChar(150)
+  platform         DevicePlatform @default(ANDROID)
+  osVersion        String?        @db.VarChar(100)
+  appVersion       String?        @db.VarChar(50)
+  status           DeviceStatus   @default(ACTIVE)
+  lastSeenAt       DateTime?      @db.Timestamptz(6)
+
+  policy            BrowserPolicy?
+  permissionRequests PermissionRequest[]
+  browserHistory    BrowserHistory[]
+  securityEvents    SecurityEvent[]
+  refreshTokens     RefreshToken[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([adminUserId, status])
+}
+
+model BrowserPolicy {
+  id                         String        @id @default(uuid()) @db.Uuid
+  deviceId                   String        @unique @db.Uuid
+  device                     BrowserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  enabled                    Boolean       @default(true)
+  safeSearch                 Boolean       @default(true)
+  approvalRequiredForUnknown Boolean       @default(true)
+  blockUnsafeRedirects       Boolean       @default(true)
+  allowDownloads             Boolean       @default(false)
+  policyVersion              Int           @default(1)
+  domainRules                DomainRule[]
+  createdAt                  DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime      @updatedAt @db.Timestamptz(6)
+}
+
+model DomainRule {
+  id         String        @id @default(uuid()) @db.Uuid
+  policyId   String        @db.Uuid
+  policy     BrowserPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  domain     String        @db.VarChar(253)
+  action     DomainAction
+  category   String?       @db.VarChar(100)
+  reason     String?       @db.VarChar(300)
+  createdAt  DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @db.Timestamptz(6)
+
+  @@unique([policyId, domain])
+  @@index([domain, action])
+}
+
+model PermissionRequest {
+  id             String           @id @default(uuid()) @db.Uuid
+  deviceId       String           @db.Uuid
+  device         BrowserDevice    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  domain         String           @db.VarChar(253)
+  requestedUrl   String           @db.VarChar(2048)
+  reason         String?          @db.VarChar(500)
+  status         PermissionStatus @default(PENDING)
+  reviewedById   String?          @db.Uuid
+  reviewedBy     AdminUser?       @relation("RequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?        @db.Timestamptz(6)
+  approvedUntil  DateTime?        @db.Timestamptz(6)
+  expiresAt      DateTime?        @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+
+  @@index([deviceId, status, createdAt])
+  @@index([domain, status])
+}
+
+model BrowserHistory {
+  id           String          @id @default(uuid()) @db.Uuid
+  deviceId     String          @db.Uuid
+  device       BrowserDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  url          String          @db.VarChar(2048)
+  domain       String          @db.VarChar(253)
+  pageTitle    String?         @db.VarChar(500)
+  decision     HistoryDecision
+  category     String?         @db.VarChar(100)
+  visitedAt    DateTime        @db.Timestamptz(6)
+  createdAt    DateTime        @default(now()) @db.Timestamptz(6)
+
+  @@index([deviceId, visitedAt])
+  @@index([domain, visitedAt])
+}
+
+model SecurityEvent {
+  id          String            @id @default(uuid()) @db.Uuid
+  deviceId    String            @db.Uuid
+  device      BrowserDevice     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  eventType   SecurityEventType
+  severity    SecuritySeverity  @default(MEDIUM)
+  domain      String?           @db.VarChar(253)
+  message     String            @db.VarChar(500)
+  metadata    Json?
+  createdAt   DateTime          @default(now()) @db.Timestamptz(6)
+
+  @@index([deviceId, createdAt])
+  @@index([eventType, severity, createdAt])
+}
+
+model RefreshToken {
+  id          String        @id @default(uuid()) @db.Uuid
+  adminUserId String        @db.Uuid
+  adminUser   AdminUser     @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  deviceId    String?       @db.Uuid
+  device      BrowserDevice? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  tokenHash   String        @unique
+  expiresAt   DateTime      @db.Timestamptz(6)
+  revokedAt   DateTime?     @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+
+  @@index([adminUserId, expiresAt])
+  @@index([deviceId, expiresAt])
+}
